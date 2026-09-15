@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CineJoy TV — visual test demo</title>
+<style>
+  :root { color-scheme: dark; }
+  body { background: #050505; color: #eee; font-family: Inter, system-ui, sans-serif; margin: 0; padding: 0 300px 80px 24px; }
+  header { display: flex; gap: 16px; align-items: center; padding: 18px 0; border-bottom: 1px solid #222; position: sticky; top: 0; background: #050505; z-index: 50; }
+  .logo { color: #95FF50; font-weight: 800; font-size: 22px; }
+  form { display: flex; gap: 8px; }
+  input[type="search"] { background: #161616; color: #fff; border: 1px solid #333; border-radius: 8px; padding: 10px 12px; font-size: 16px; width: 280px; }
+  button { background: #222; color: #fff; border: 1px solid #444; border-radius: 8px; padding: 10px 14px; font-size: 15px; cursor: pointer; }
+  h2 { color: #95FF50; margin: 28px 0 12px; font-size: 18px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+  .card { display: block; text-decoration: none; color: #eee; background: #111; border-radius: 10px; overflow: hidden; }
+  .poster { height: 200px; }
+  .card span { display: block; padding: 8px 10px; font-size: 14px; }
+  video { width: 100%; max-width: 720px; background: #000; border-radius: 10px; }
+  .hint { color: #999; font-size: 13px; margin-top: 6px; }
+  .trap { border: 1px dashed #666; border-radius: 10px; padding: 12px; margin: 10px 0; }
+  .result { color: #95FF50; font-family: monospace; margin-left: 8px; }
+  #remote { position: fixed; right: 0; top: 0; bottom: 0; width: 260px; background: #0c0c0c; border-left: 2px solid #95FF50; padding: 14px; overflow-y: auto; z-index: 100; }
+  #remote h3 { color: #95FF50; margin: 0 0 10px; font-size: 15px; }
+  #remote .pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 10px; }
+  #remote .pad button, #remote .row button { padding: 10px 4px; font-size: 14px; }
+  #remote .row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
+  #readout { font-family: monospace; font-size: 12px; background: #000; border: 1px solid #333; border-radius: 8px; padding: 8px; min-height: 60px; word-break: break-all; }
+  .r { background: #a00 !important; } .g { background: #0a0 !important; color: #000 !important; }
+  .y { background: #aa0 !important; color: #000 !important; } .b { background: #00a !important; }
+  ol.check li { margin: 6px 0; font-size: 14px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">CineJoy</div>
+  <form action="/demo" method="get">
+    <input type="search" name="q" placeholder="Search movies..." autocomplete="off" />
+    <button type="submit">Search</button>
+  </form>
+  <!--QUERY-->
+</header>
+
+<main>
+  <h2>Try this</h2>
+  <ol class="check">
+    <li>Click remote arrows — the green ring must move between <b>tiles, search,
+      episode buttons and the player only</b>. Footer links, tiny icon buttons
+      and carousel chevrons must be skipped.</li>
+    <li>Click <b>GREEN</b> — focus jumps into search. Type, press <b>OK</b> — page reloads with <i>?q=…</i>.</li>
+    <li>Focus the video, press <b>OK</b> — toggles play/pause. <b>FF/RW</b> seek. <b>BLUE</b> fullscreen.</li>
+    <li>Press <b>YELLOW</b> — help overlay. <b>BACK</b> closes it, press again to go back.</li>
+    <li>Ad traps below: banners must be invisible, checks must print green.</li>
+  </ol>
+
+  <h2>Catalog</h2>
+  <div class="grid">
+    <a class="card" href="#/movie/1"><div class="poster" style="background:linear-gradient(135deg,#3a1c71,#d76d77)"></div><span>Neon Harbor (2026)</span></a>
+    <a class="card" href="#/movie/2"><div class="poster" style="background:linear-gradient(135deg,#11998e,#38ef7d)"></div><span>Green Static</span></a>
+    <a class="card" href="#/movie/3"><div class="poster" style="background:linear-gradient(135deg,#232526,#414345)"></div><span>Concrete Dreams</span></a>
+    <a class="card" href="#/movie/4"><div class="poster" style="background:linear-gradient(135deg,#fc4a1a,#f7b733)"></div><span>Solar Drift</span></a>
+    <a class="card" href="#/movie/5"><div class="poster" style="background:linear-gradient(135deg,#654ea3,#eaafc8)"></div><span>Violet Hour</span></a>
+    <a class="card" href="#/movie/6"><div class="poster" style="background:linear-gradient(135deg,#000428,#004e92)"></div><span>Deep Field</span></a>
+    <a class="card" href="#/movie/7"><div class="poster" style="background:linear-gradient(135deg,#42275b,#734b6d)"></div><span>Night Signal</span></a>
+    <a class="card" href="#/movie/8"><div class="poster" style="background:linear-gradient(135deg,#0f9b0f,#000000)"></div><span>Static Bloom</span></a>
+  </div>
+
+  <h2>Player</h2>
+  <video controls preload="none" src="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4"></video>
+  <div class="hint">Focus the video, then OK = play/pause, ◀/▶ = ±10s, BLUE = fullscreen.</div>
+
+  <h2>Episodes (small but labeled — must stay snappable)</h2>
+  <div>
+    <button type="button">E1</button> <button type="button">E2</button>
+    <button type="button">E3</button>
+    <button type="button" aria-label="previous page">‹</button>
+    <button type="button" aria-label="next page">›</button>
+  </div>
+
+  <footer style="margin-top:32px;border-top:1px solid #222;padding-top:12px">
+    <a href="#/privacy">Privacy</a> · <a href="#/terms">Terms</a> · <a href="#/dmca">DMCA</a>
+    <span style="margin-left:16px">
+      <button type="button" aria-label="Twitter" style="padding:4px 6px;font-size:11px">t</button>
+      <button type="button" aria-label="Telegram" style="padding:4px 6px;font-size:11px">tg</button>
+    </span>
+  </footer>
+
+  <div role="dialog" aria-label="Demo dialog" style="margin-top:16px;border:1px solid #444;border-radius:10px;padding:12px">
+    Dialog box — its × must stay reachable while open:
+    <button type="button" aria-label="close">×</button>
+  </div>
+
+  <h2>Ad traps (must all stay dead)</h2>
+  <div class="trap">
+    <div class="adsbox">BANNER AD — you should NOT see this</div>
+    <div class="adsbygoogle">GOOGLE AD — you should NOT see this</div>
+    <iframe src="https://adsterra.com/banner.html" width="300" height="60" title="ad"></iframe>
+    <div class="hint">If any box above is visible, cosmetic filtering failed.</div>
+  </div>
+  <div class="trap">
+    <button id="btn-pop" type="button">Trigger popunder</button><span class="result" id="res-pop"></span>
+  </div>
+  <div class="trap">
+    <button id="btn-fetch" type="button">Fetch ad URL + legit URL</button><span class="result" id="res-fetch"></span>
+  </div>
+  <script src="https://popads.net/pop.js"></script>
+</main>
+
+<aside id="remote">
+  <h3>TV remote (mouse-ok)</h3>
+  <div class="pad">
+    <span></span><button type="button" tabindex="-1" data-tv="up">▲</button><span></span>
+    <button type="button" tabindex="-1" data-tv="left">◀</button><button type="button" tabindex="-1" data-tv="ok">OK</button><button type="button" tabindex="-1" data-tv="right">▶</button>
+    <span></span><button type="button" tabindex="-1" data-tv="down">▼</button><span></span>
+  </div>
+  <div class="row">
+    <button type="button" tabindex="-1" data-tv="back">BACK</button>
+    <button type="button" tabindex="-1" data-tv="play">PLAY/PAUSE</button>
+    <button type="button" tabindex="-1" data-tv="rw">RW</button>
+    <button type="button" tabindex="-1" data-tv="ff">FF</button>
+    <button type="button" tabindex="-1" class="r" data-tv="red">RED</button>
+    <button type="button" tabindex="-1" class="g" data-tv="green">GREEN</button>
+    <button type="button" tabindex="-1" class="y" data-tv="yellow">YELLOW</button>
+    <button type="button" tabindex="-1" class="b" data-tv="blue">BLUE</button>
+  </div>
+  <h3>Focus now</h3>
+  <div id="readout">(nothing focused yet)</div>
+</aside>
+
+<script src="/test/remote-emulator.snippet.js"></script>
+<script>
+  // Panel buttons must not steal focus (they are mouse-operated test tools).
+  document.querySelectorAll('#remote [data-tv]').forEach(function (b) {
+    b.addEventListener('mousedown', function (e) { e.preventDefault(); });
+    b.addEventListener('click', function () { window.tv(b.getAttribute('data-tv')); });
+  });
+  var readout = document.getElementById('readout');
+  document.addEventListener('focusin', function (e) {
+    var t = e.target;
+    readout.textContent = '<' + t.tagName.toLowerCase() + '> ' + ((t.textContent || t.value || '').trim().slice(0, 60));
+  });
+  document.getElementById('btn-pop').addEventListener('click', function () {
+    var w = null;
+    try { w = window.open('https://popads.net/pop'); } catch (e) { w = 'threw'; }
+    document.getElementById('res-pop').textContent = w === null ? 'BLOCKED (null)' : 'OPENED — BAD: ' + w;
+  });
+  document.getElementById('btn-fetch').addEventListener('click', function () {
+    var out = document.getElementById('res-fetch');
+    out.textContent = '…';
+    window.fetch('https://adsterra.com/pup.js').then(function (r) {
+      return window.fetch('/demo').then(function (r2) {
+        out.textContent = 'ad=' + r.status + ' (want 204), self=' + r2.status + ' (want 200)';
+      });
+    }).catch(function (e) { out.textContent = 'ERROR ' + e; });
+  });
+</script>
+<script src="/dist/cinejoy.js"></script>
+</body>
+</html>
