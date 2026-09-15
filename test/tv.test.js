@@ -28,8 +28,23 @@ const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
 ok(pkg.packageType === 'mods', 'manifest packageType=mods');
 ok(pkg.websiteURL === 'https://cinejoy.to/', 'manifest websiteURL=cinejoy.to');
 ok(typeof pkg.main === 'string' && fs.existsSync(path.join(root, pkg.main)), 'manifest main bundle exists');
-for (const k of ['MediaPlayPause', 'Red', 'Green', 'Yellow', 'Blue']) {
+for (const k of ['MediaPlayPause', 'ColorF1Green', 'ColorF3Blue']) {
   ok(pkg.keys.includes(k), `manifest keys include ${k}`);
+}
+// registerKey throws on unknown names and TizenBrew registers keys in an
+// unguarded loop BEFORE navigating — one bad name bricks the launch click.
+// Allowlist mirrors Samsung's remote-control key table (+ TizenTube's set).
+{
+  const valid = new Set([
+    'MediaPlayPause', 'MediaPlay', 'MediaPause', 'MediaStop',
+    'MediaFastForward', 'MediaRewind', 'MediaRecord',
+    'MediaTrackNext', 'MediaTrackPrevious',
+    'ColorF0Red', 'ColorF1Green', 'ColorF2Yellow', 'ColorF3Blue',
+    'ChannelUp', 'ChannelDown', 'VolumeUp', 'VolumeDown', 'VolumeMute',
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+  ]);
+  const bad = pkg.keys.filter((k) => !valid.has(k));
+  ok(bad.length === 0, 'all manifest keys are registerKey-safe' + (bad.length ? ' (bad: ' + bad.join(',') + ')' : ''));
 }
 
 // 2. Bundle boots on cinejoy host, injects TV UI + hardens search.

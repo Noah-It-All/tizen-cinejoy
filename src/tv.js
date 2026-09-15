@@ -561,12 +561,14 @@ function handleKey(evt) {
       seekBy(10); return false;
     case 412: // Rewind
       seekBy(-10); return false;
-    case 425: // TrackNext
+    case 425: // TrackNext (legacy code; Samsung table also lists 10233)
+    case 10233: // TrackNext (Samsung remote-control table)
       if (!seekBy(30)) {
         try { evt.preventDefault(); } catch (e) {}
       }
       return false;
-    case 424: // TrackPrevious
+    case 424: // TrackPrevious (legacy code; Samsung table also lists 10232)
+    case 10232: // TrackPrevious (Samsung remote-control table)
       if (!seekBy(-30)) {
         try { evt.preventDefault(); } catch (e) {}
       }
