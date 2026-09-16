@@ -714,8 +714,6 @@ export function initTV() {
   document.addEventListener('keydown', handleKey, true);
   document.addEventListener('keypress', handleKey, true);
 
-  // NOTE: popup blocking lives in ads.js (initAds runs before initTV).
-
   // Initial focus + hint (SPA may still be hydrating; retry).
   // Prefer the first tile-sized target (hero card / first rail tile), not
   // header chrome: focus should land on content, Netflix-style.

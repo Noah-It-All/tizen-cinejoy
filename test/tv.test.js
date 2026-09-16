@@ -131,48 +131,32 @@ for (const k of ['MediaPlayPause', 'ColorF1Green', 'ColorF3Blue']) {
   dom.window.close();
 }
 
-import { isAdUrl } from '../src/ads.js';
 import { isNavTarget } from '../src/focus-policy.js';
 import {
   ensureKeyboardDom, isKeyboardKey, isKeyboardVisible, showKeyboardFor,
   hideKeyboard, pressKbKey, moveKb, kbRowCount, kbCols,
 } from '../src/keyboard.js';
 
-// 6. Adblocking: pure URL classifier.
-{
-  ok(isAdUrl('https://adsterra.com/pup.js'), 'ad host blocked (adsterra)');
-  ok(isAdUrl('https://www.propellerads.com/x.js'), 'ad host blocked (propeller)');
-  ok(isAdUrl('https://monetag.com/tag.js'), 'ad host blocked (monetag)');
-  ok(isAdUrl('https://cdn.example.com/atOptions.js'), 'ad pattern blocked (atOptions)');
-  ok(isAdUrl('https://sub.adsterra.com/pup.js'), 'ad subdomain blocked');
-  ok(!isAdUrl('https://notadsterra.com/x.js'), 'lookalike domain passes');
-  ok(!isAdUrl('/api/trending'), 'first-party relative URL passes');
-  ok(!isAdUrl('https://cinejoy.to/search?q=x'), 'first-party absolute URL passes');
-  ok(!isAdUrl('https://cdn.cinejoy.to/hls/seg.m3u8'), 'video CDN passes');
-  ok(!isAdUrl(''), 'empty URL passes');
-}
-
-// 7. Adblocking: live bundle behavior (no real network touched).
+// 6. No adblocking: network and DOM pass straight through (filtering lives
+// on the user's Pi-hole; nothing here may block, remove, or hide anything).
 {
   const dom = new JSDOM('<!DOCTYPE html><html><head></head><body></body></html>', {
     url: 'https://cinejoy.to/', runScripts: 'dangerously',
   });
   dom.window.eval(dist);
   await waitFor(() => typeof dom.window.__tjFocusSearch === 'function');
-  const res = await dom.window.fetch('https://adsterra.com/pup.js');
-  ok(res && res.status === 204, 'ad fetch short-circuits to empty 204');
-  ok(dom.window.open('https://example.com/') === null, 'window.open popunder blocked');
-  ok(!!dom.window.document.querySelector('style[data-tj-ads]'), 'ad-hiding CSS injected');
+  ok(typeof dom.window.open === 'function', 'window.open left native');
+  ok(!dom.window.document.querySelector('style[data-tj-ads]'), 'no ad-hiding CSS injected');
   const s = dom.window.document.createElement('script');
   s.setAttribute('src', 'https://popads.net/pop.js');
   dom.window.document.body.appendChild(s);
   await new Promise((r) => setTimeout(r, 400));
-  ok(!s.parentNode, 'injected ad script node removed');
-  const legit = dom.window.document.createElement('script');
-  legit.setAttribute('src', 'https://cinejoy.to/_app/immutable/chunks/app.js');
-  dom.window.document.body.appendChild(legit);
+  ok(!!s.parentNode, 'third-party script node untouched');
+  const f = dom.window.document.createElement('iframe');
+  f.setAttribute('src', 'https://adsterra.com/banner.html');
+  dom.window.document.body.appendChild(f);
   await new Promise((r) => setTimeout(r, 400));
-  ok(!!legit.parentNode, 'first-party script node untouched');
+  ok(!!f.parentNode, 'third-party iframe untouched');
   dom.window.close();
 }
 

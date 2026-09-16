@@ -8,13 +8,10 @@ modeled on the [TizenTube](https://github.com/reisxd/TizenTube) module
 
 The injected script (`dist/cinejoy.js`, built from `src/`) adds:
 
-- **Adblocking**: fetch/XHR/beacon calls to known ad hosts (Adsterra,
-  Propeller, Monetag, PopAds/PopCash, HilltopAds, ExoClick and ~160 more —
-  short-circuit to empty responses; `window.open` popunders blocked; injected
-  ad `<script>`/`<iframe>` nodes removed; well-known ad slots hidden with CSS.
-  First-party API and video CDN traffic is never touched. Pre-roll/VAST baked
-  into third-party player iframes can't be skipped generically — test, tell me
-  what you actually see, and I'll target it.
+- **No adblocking, by design**: no request is blocked, no DOM node removed,
+  nothing hidden. Network-level filtering lives on your own Pi-hole — the
+  bundle only drives remote, focus, keyboard, and player behavior, so it can
+  never hang playback by 204'ing something the player needs.
 - **Spatial navigation that snaps to what matters** (`src/focus-policy.js`,
   driven like TizenTube's `ui.js` with `__spatialNavigation__.keyMode = 'NONE'`)
   plus an always-visible `#95FF50` focus ring with tile zoom. Snappable:
@@ -87,8 +84,9 @@ The injected script (`dist/cinejoy.js`, built from `src/`) adds:
 
 ## Test before touching the TV
 
-1. **Unit/jsdom**: `npm test` — 31 checks (manifest schema, boot, search,
-   GREEN key, ~170-host adblock classifier + live bundle behavior). No TV needed.
+1. **Unit/jsdom**: `npm test` — manifest schema, boot, search,
+   GREEN key, focus policy, TV keyboard, player zones, network transparency.
+   No TV needed.
 2. **Visual, against the REAL site** (see the actual webpage):
    ```sh
    npm run test:visual   # builds + proxies https://cinejoy.to → http://localhost:8123/
@@ -96,13 +94,11 @@ The injected script (`dist/cinejoy.js`, built from `src/`) adds:
    Open `http://localhost:8123/` — that's the live cinejoy.to, with the
    module injected plus an on-screen TV remote (bottom-right). Arrows move
    the green ring, GREEN focuses search, type + OK submits real searches,
-   play a title and try OK/FF/RW/BLUE. Ad traps live at `/demo` (banners
-   must stay invisible, trap buttons report BLOCKED).
+   play a title and try OK/FF/RW/BLUE.
 3. **No-proxy alternative**: load `dist/cinejoy.js` into
    [Tampermonkey](https://www.tampermonkey.net/) with
    `@match https://cinejoy.to/*` and browse the real site directly, driving
    keys via `test/remote-emulator.snippet.js` (`tv("green")`, `tv("back")`).
-   Report any ads you see — that's how we target what generic blocking misses.
 4. **True Tizen WebKit**: Tizen Studio's TV Emulator
    (`~/tizen-studio/tools/emulator`) + `sdb`/`tizen install`, same flow as a
    physical TV but slow to set up.
@@ -175,14 +171,15 @@ public level, so no partner-level certificate is ever needed for this module.
 ```sh
 npm install
 npm run build   # src/userScript.js -> dist/cinejoy.js (Chrome 47, ES5, minified)
-npm test        # 31 jsdom checks: manifest, boot, search, GREEN key, adblocking
+npm test        # jsdom checks: manifest, boot, search, GREEN key, focus, keyboard
 ```
 
 Layout: `src/userScript.js` (entry/host gate) · `src/compat.js` (ES5-safe
 polyfills) · `src/spatial-navigation-polyfill.js` + `src/domrect-polyfill.js`
 (same sources as TizenTube) · `src/tv.js` (focus/keys/video/help/toast) ·
-`src/search-fix.js` (IME + keyboard search) · `src/ui.css` (focus ring/toast/
-help) · `test/tv.test.js` (jsdom suite) · `test/remote-emulator.snippet.js`
+`src/search-fix.js` (IME + keyboard search) · `src/keyboard.js` (on-screen TV
+keyboard) · `src/rows.js` (row-aware arrows) · `src/focus-policy.js` (snap
+targets) · `src/ui.css` (focus ring/toast/help/keyboard) · `test/tv.test.js` (jsdom suite) · `test/remote-emulator.snippet.js`
 (console key sender) · `test/manual/server.mjs` (live dev proxy) +
 `test/manual/demo.html` (ad-trap lab) · `test/manual/render.mjs` (headless
 Chromium screenshots + DOM dumps of the real site; needs `npm i -D

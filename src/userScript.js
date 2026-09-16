@@ -6,11 +6,12 @@
  *
  * What it does:
  *  - Polyfills old Tizen browsers (Chrome 47) so the SvelteKit site boots.
- *  - Adblocking: ad-host fetch/XHR/beacon blocks, popunder blocking,
- *    injected ad script/iframe removal, cosmetic ad CSS.
  *  - Full remote support: arrows/OK/Back + media + color + channel + numbers.
  *  - Working keyboard search: IME-safe, physical-keyboard-safe, Enter submits,
- *    GREEN focuses search from anywhere.
+ *    GREEN focuses search from anywhere, on-screen TV keyboard included.
+ *
+ * Deliberately NO adblocking: network filtering lives on the user's Pi-hole.
+ * Nothing here blocks, removes, or hides any request or DOM node.
  */
 import './compat.js';
 import './domrect-polyfill.js';
@@ -18,7 +19,6 @@ import './spatial-navigation-polyfill.js';
 import 'whatwg-fetch';
 import 'core-js/proposals/object-getownpropertydescriptors';
 import css from './ui.css';
-import { initAds } from './ads.js';
 import { initTV } from './tv.js';
 
 (function boot() {
@@ -62,11 +62,6 @@ import { initTV } from './tv.js';
     } catch (e) { return setTimeout(start, 100); }
     booted = true;
     injectCss();
-    try {
-      initAds(); // network hooks first, before the SPA pulls ad scripts
-    } catch (e) {
-      console.error('[tj] ads init failed', e);
-    }
     try {
       initTV();
     } catch (e) {
