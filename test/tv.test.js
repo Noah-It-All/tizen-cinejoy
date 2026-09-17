@@ -136,6 +136,7 @@ import {
   ensureKeyboardDom, isKeyboardKey, isKeyboardVisible, showKeyboardFor,
   hideKeyboard, pressKbKey, moveKb, kbRowCount, kbCols,
 } from '../src/keyboard.js';
+import { isPlayerBuffering, serverCandidates, watchdogTick } from '../src/tv.js';
 
 // 6. No adblocking: network and DOM pass straight through (filtering lives
 // on the user's Pi-hole; nothing here may block, remove, or hide anything).
@@ -394,6 +395,64 @@ import {
     document.activeElement.classList.contains('tj-kb-key');
   ok(inKb, 'Down from search field lands in the TV keyboard (was ' + (before && before.tagName) + ')');
   dom.window.close();
+}
+
+// 13. Stuck-server watchdog: quiet mode while buffering, server candidates,
+// auto-advance off a dead server, manual picks respected.
+{
+  const dom = new JSDOM(
+    '<!DOCTYPE html><html><body><div id="proot"><video></video>' +
+    '<button aria-label="Servers">menu</button>' +
+    '<button id="s-lis">Lisbon</button><button id="s-neb">Nebula</button>' +
+    '<button aria-label="View details for X">X</button>' +
+    '<button id="s-t">0:05 / 1:00</button>' +
+    '</div></body></html>',
+    { url: 'https://cinejoy.to/watch/movie/1', runScripts: 'outside-only' }
+  );
+  const doc = dom.window.document;
+  const prevDoc = global.document;
+  const prevWin = global.window;
+  global.document = doc;
+  global.window = dom.window;
+  try {
+    const zone = doc.getElementById('proot');
+    zone.setAttribute('data-tj-player', '1');
+    const rect = (el, w, h) => {
+      el.getBoundingClientRect = () => ({ width: w, height: h, left: 0, top: 400, right: w, bottom: 400 + h, x: 0, y: 400 });
+    };
+    const vid = doc.querySelector('video');
+    const stubVideo = (t, rs) => {
+      Object.defineProperty(vid, 'currentTime', { value: t, configurable: true });
+      Object.defineProperty(vid, 'readyState', { value: rs, configurable: true });
+    };
+    rect(doc.getElementById('s-lis'), 336, 40);
+    rect(doc.getElementById('s-neb'), 336, 40);
+    const cands = serverCandidates();
+    const names = cands.map((b) => (b.textContent || '').trim());
+    ok(names.includes('Lisbon') && names.includes('Nebula'), 'server candidates found (' + names.join(',') + ')');
+    ok(!names.join(' ').includes('View details') && !names.join(' ').includes('0:05'), 'title/clock buttons excluded');
+    // Quiet mode: stalled video -> buffering; playing video -> not.
+    stubVideo(0, 1);
+    ok(isPlayerBuffering(), 'stalled video counts as buffering (quiet mode)');
+    stubVideo(12.5, 4);
+    ok(!isPlayerBuffering(), 'playing video is not buffering');
+    // Watchdog: stall with zero progress advances to next untried server.
+    stubVideo(0, 1);
+    let clicked = null;
+    doc.getElementById('s-lis').addEventListener('click', () => { clicked = 'Lisbon'; });
+    doc.getElementById('s-neb').addEventListener('click', () => { clicked = 'Nebula'; });
+    ok(watchdogTick(1000) === false, 'first stalled tick only arms the clock');
+    ok(watchdogTick(1000 + 16000) === true, 'stalled past threshold auto-switches server');
+    ok(clicked === 'Lisbon' || clicked === 'Nebula', 'auto-switch clicked a server (' + clicked + ')');
+    // Progress stands the watchdog down.
+    stubVideo(30, 4);
+    ok(watchdogTick(1000 + 30000) === false, 'progress disarms the watchdog');
+    ok(clicked && (clicked === 'Lisbon' || clicked === 'Nebula'), 'no further clicks once playing');
+  } finally {
+    global.document = prevDoc;
+    global.window = prevWin;
+    dom.window.close();
+  }
 }
 
 console.log(failures === 0 ? 'ALL CHECKS PASSED' : failures + ' CHECK(S) FAILED');

@@ -192,6 +192,147 @@ export function makeFocusable(root) {
   for (var d = 0; d < demote.length; d++) demoteEl(demote[d]);
 }
 
+// --- Stuck-server watchdog + player quiet mode ---
+//
+// Two failure modes seen on real TVs when a stream server wedges (e.g. stuck
+// on "Trying Lisbon" with a fully unresponsive page):
+//  1. Our own fixed-interval focus passes (full-DOM query + forced layouts
+//     every 2.5s) add CPU load on weak SoCs exactly while the site's player
+//     is churning its retry loop. Quiet mode skips those passes while the
+//     video hasn't produced its first frame yet; interaction-driven
+//     (mutation-debounced) passes still run, so controls stay reachable.
+//  2. The player never advances off the dead server by itself. The watchdog
+//     notices zero progress for STALL_MS and clicks the next server in the
+//     player's Servers menu (server entries are wide labeled buttons in the
+//     player zone — geometric match, no class names).
+var STALL_MS = 15000;
+var WATCHDOG_INTERVAL = 5000;
+var MAX_AUTO_SWITCHES = 6;
+var triedServers = [];
+var stallSince = 0;
+var autoSwitches = 0;
+
+// True while a video exists but hasn't produced playable output yet.
+export function isPlayerBuffering() {
+  try {
+    var vids = document.querySelectorAll('video');
+    if (!vids || !vids.length) return false;
+    var v = vids[0];
+    var t = 0, rs = 0;
+    try { t = v.currentTime || 0; } catch (e) {}
+    try { rs = v.readyState || 0; } catch (e) {}
+    return t < 1 && rs < 3;
+  } catch (e) {
+    return false;
+  }
+}
+
+// Server menu entries: wide labeled buttons in the player zone. Excludes the
+// title button ("View details…") and the clock display by size + aria.
+export function serverCandidates() {
+  var out = [];
+  var zone = null;
+  try { zone = document.querySelector('[data-tj-player]'); } catch (e) {}
+  if (!zone) return out;
+  var btns;
+  try { btns = zone.querySelectorAll('button'); } catch (e) { return out; }
+  for (var i = 0; i < btns.length; i++) {
+    var b = btns[i];
+    try {
+      var r = b.getBoundingClientRect();
+      var text = (b.textContent || '').trim();
+      var aria = b.getAttribute('aria-label') || '';
+      if (r.width >= 150 && r.width <= 700 && r.height >= 24 && r.height <= 72 &&
+          text.length >= 2 && text.length <= 24 &&
+          aria.indexOf('View details') !== 0) {
+        out.push(b);
+      }
+    } catch (e) {}
+  }
+  return out;
+}
+
+function findServersButton() {
+  try {
+    var btns = document.querySelectorAll('[data-tj-player] button, button');
+    for (var i = 0; i < btns.length; i++) {
+      var a = '';
+      try { a = btns[i].getAttribute('aria-label') || ''; } catch (e) {}
+      if (a === 'Servers') return btns[i];
+    }
+    for (var j = 0; j < btns.length; j++) {
+      var b2 = '';
+      try { b2 = (btns[j].getAttribute('aria-label') || '').toLowerCase(); } catch (e) {}
+      if (b2.indexOf('server') !== -1) return btns[j];
+    }
+  } catch (e) {}
+  return null;
+}
+
+function openServersMenu() {
+  var btn = findServersButton();
+  if (!btn) return [];
+  // The menu items pre-exist hidden; one click opens, a second closes. Keep
+  // clicking until candidates are visible (max 2 clicks).
+  try { btn.click(); } catch (e) { return []; }
+  var cands = serverCandidates();
+  if (!cands.length) {
+    try { btn.click(); } catch (e) {}
+    cands = serverCandidates();
+  }
+  return cands;
+}
+
+export function watchdogTick(now) {
+  now = now || Date.now();
+  var v = null;
+  try { v = activeVideo(); } catch (e) {}
+  if (!v) { stallSince = 0; return false; }
+  var progressed = false;
+  try { progressed = (v.currentTime || 0) > 1 || (v.readyState || 0) >= 3; } catch (e) {}
+  if (progressed) {
+    stallSince = 0; // playing again: re-arm the clock, keep tried-list
+    return false;
+  }
+  if (!stallSince) { stallSince = now; return false; }
+  if (now - stallSince < STALL_MS) return false;
+  if (autoSwitches >= MAX_AUTO_SWITCHES) return false;
+  var cands = [];
+  try { cands = openServersMenu(); } catch (e) {}
+  var next = null;
+  for (var i = 0; i < cands.length; i++) {
+    var name = '';
+    try { name = (cands[i].textContent || '').trim(); } catch (e) {}
+    if (name && triedServers.indexOf(name) === -1) { next = cands[i]; break; }
+  }
+  if (!next) return false; // every server tried (or no menu): stand down
+  var label = '';
+  try { label = (next.textContent || '').trim(); } catch (e) {}
+  try { next.click(); } catch (e) { return false; }
+  if (label) triedServers.push(label);
+  autoSwitches++;
+  stallSince = 0; // fresh clock for the new server
+  try { showToast('Server stuck', 'Trying ' + (label || 'next server') + '…'); } catch (e) {}
+  return true;
+}
+
+function noteManualServerPick(target) {
+  // If the user picks a server themselves, respect it: mark tried + restart
+  // the stall clock instead of fighting them with an auto-switch.
+  try {
+    var cands = serverCandidates();
+    for (var i = 0; i < cands.length; i++) {
+      if (cands[i] === target || (cands[i].contains && cands[i].contains(target))) {
+        var name = '';
+        try { name = (cands[i].textContent || '').trim(); } catch (e) {}
+        if (name && triedServers.indexOf(name) === -1) triedServers.push(name);
+        stallSince = 0;
+        return;
+      }
+    }
+  } catch (e) {}
+}
+
 // Mark the containers around each <video> as player zones (data-tj-player).
 // The focus policy uses this to approve icon-only player controls (play,
 // subtitles, settings, sliders…) that the generic speck rules would eat.
@@ -665,9 +806,24 @@ export function initTV() {
     });
   } catch (e) {}
   setInterval(function () {
+    // Quiet mode: while the player hasn't produced its first frame, skip the
+    // fixed pass (forced layouts on a churning retry-loop DOM can wedge weak
+    // SoCs). Mutation-driven passes still keep controls reachable.
+    try { if (isPlayerBuffering()) return; } catch (e) {}
     makeFocusable(document);
     try { rebuildRows(document); } catch (e) {}
   }, 2500);
+
+  // Stuck-server watchdog: advance off a dead server when the video shows
+  // zero progress for a while (e.g. frozen on "Trying Lisbon").
+  setInterval(function () {
+    try { watchdogTick(); } catch (e) {}
+  }, WATCHDOG_INTERVAL);
+
+  // Respect manual server picks (don't auto-switch over the user's choice).
+  document.addEventListener('click', function (e) {
+    try { noteManualServerPick(e.target); } catch (e2) {}
+  }, true);
 
   // Keep focused cards on screen (Svelte rows scroll horizontally) and feed
   // row focus memory (Up/Down returns to the tile you came from).

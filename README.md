@@ -29,14 +29,22 @@ The injected script (`dist/cinejoy.js`, built from `src/`) adds:
   removed from tab order. Geometry + semantics only — no class names, so
   Svelte rebuilds can't break it.
 - **Player arrows** (`src/tv.js` + `src/rows.js`): a focused video behaves like
-  a native TV player — ◀/▶ scrubs ±10s and stays on the video, ▲/▼ drops into
-  the control bar (remembered button first, else Play/Pause). On a focused
-  seek/volume slider ◀/▶ adjusts natively (fires `input`/`change` so the
-  custom bar follows); ▲/▼ leaves so it never traps focus. The slider itself
-  is `opacity:0`, so focus highlights the visible progress bar instead
-  (`.tj-seek-focus`). Any arrow press wakes the auto-hiding control bar via a
-  synthetic `mousemove`. Left/Right inside the bar steps button-to-button
-  through the row logic.
+a native TV player — ◀/▶ scrubs ±10s and stays on the video, ▲/▼ drops into
+the control bar (remembered button first, else Play/Pause). On a focused
+seek/volume slider ◀/▶ adjusts natively (fires `input`/`change` so the
+custom bar follows); ▲/▼ leaves so it never traps focus. The slider itself
+is `opacity:0`, so focus highlights the visible progress bar instead
+(`.tj-seek-focus`). Any arrow press wakes the auto-hiding control bar via a
+synthetic `mousemove`. Left/Right inside the bar steps button-to-button
+through the row logic.
+- **Stuck-server watchdog** (`src/tv.js`): if the video shows zero progress
+for ~15s (e.g. frozen on "Trying Lisbon"), the module opens the player's
+Servers menu and clicks the next untried server (Lisbon → Nebula → …),
+with a toast narrating the switch. Stands down the moment anything plays,
+never touches a server you picked yourself, max 6 auto-switches. While the
+video hasn't produced its first frame, the fixed 2.5s focus passes are also
+skipped (quiet mode) so layout work can't pile onto a churning retry loop
+on weak SoCs — interaction-driven passes still run.
 - **Row-aware arrows** (`src/rows.js`, the Netflix feel): Left/Right steps to
   the adjacent tile and stays clamped in the rail; Up/Down hops to the
   nearest rail preserving column, landing on the remembered tile (focus
