@@ -206,10 +206,14 @@ export function makeFocusable(root) {
 //     player's Servers menu (server entries are wide labeled buttons in the
 //     player zone — geometric match, no class names).
 var STALL_MS = 15000;
+var PLAY_RESCUE_MS = 8000;
 var WATCHDOG_INTERVAL = 5000;
 var MAX_AUTO_SWITCHES = 6;
 var triedServers = [];
 var stallSince = 0;
+var lastT = -1;
+var lastAdvance = 0;
+var playAttempted = false;
 var autoSwitches = 0;
 
 // True while a video exists but hasn't produced playable output yet.
@@ -269,49 +273,101 @@ function findServersButton() {
   return null;
 }
 
-function openServersMenu() {
-  var btn = findServersButton();
-  if (!btn) return [];
-  // The menu items pre-exist hidden; one click opens, a second closes. Keep
-  // clicking until candidates are visible (max 2 clicks).
-  try { btn.click(); } catch (e) { return []; }
-  var cands = serverCandidates();
-  if (!cands.length) {
-    try { btn.click(); } catch (e) {}
-    cands = serverCandidates();
-  }
-  return cands;
-}
+var pendingMenuOpen = 0;
+var lastStatusToast = 0;
 
 export function watchdogTick(now) {
   now = now || Date.now();
+  // Zone marking must not depend on the focus pass: quiet mode skips those
+  // passes while buffering, which is exactly when the watchdog needs zones.
+  try { markPlayerZones(); } catch (e) {}
   var v = null;
   try { v = activeVideo(); } catch (e) {}
-  if (!v) { stallSince = 0; return false; }
-  var progressed = false;
-  try { progressed = (v.currentTime || 0) > 1 || (v.readyState || 0) >= 3; } catch (e) {}
-  if (progressed) {
-    stallSince = 0; // playing again: re-arm the clock, keep tried-list
+  if (!v) {
+    stallSince = 0; lastT = -1; lastAdvance = 0; playAttempted = false;
+    pendingMenuOpen = 0; lastStatusToast = 0;
     return false;
   }
+  var t = 0, paused = true;
+  try { t = v.currentTime || 0; } catch (e) {}
+  try { paused = !!v.paused; } catch (e) {}
+  // Healthy: the clock is moving. Anything else is suspect — readyState
+  // alone proves nothing (a paused-at-0 video can report HAVE_FUTURE_DATA).
+  // The very first sample only establishes the baseline, never progress.
+  if (lastT < 0) {
+    lastT = t; lastAdvance = now;
+  } else if (t > lastT + 0.25) {
+    lastT = t; lastAdvance = now; stallSince = 0; playAttempted = false;
+    lastStatusToast = 0;
+    return false;
+  }
+  // Deliberate pause mid-film: never fight the user.
+  if (paused && t >= 1) { stallSince = 0; return false; }
   if (!stallSince) { stallSince = now; return false; }
+  // Autoplay rescue: paused at the start with data available — try play()
+  // once before blaming the server.
+  if (paused && t < 1 && !playAttempted && now - stallSince > PLAY_RESCUE_MS) {
+    playAttempted = true;
+    try {
+      var pr = v.play();
+      if (pr && pr.catch) pr.catch(function () {});
+      showToast('Starting playback…');
+    } catch (e) {}
+    return false;
+  }
   if (now - stallSince < STALL_MS) return false;
   if (autoSwitches >= MAX_AUTO_SWITCHES) return false;
+  try { wakePlayer(); } catch (e) {}
+  // The menu reveals asynchronously after the Servers click, so open across
+  // ticks: this tick opens, the next one collects. Bounded retries.
   var cands = [];
-  try { cands = openServersMenu(); } catch (e) {}
+  try { cands = serverCandidates(); } catch (e) {}
+  if (!cands.length) {
+    var btn = null;
+    try { btn = findServersButton(); } catch (e) {}
+    if (!btn) {
+      // Control bar torn down while the new server loads: wait for it to
+      // come back (playback disarms; reappearing controls resume switching).
+      // Periodic toast so a long wait doesn't read as frozen.
+      pendingMenuOpen = 0;
+      if (!lastStatusToast || now - lastStatusToast > 30000) {
+        lastStatusToast = now;
+        try { showToast('Loading…', 'Waiting on the stream server'); } catch (e) {}
+      }
+      return false;
+    }
+    if (pendingMenuOpen >= 3) {
+      pendingMenuOpen = 0;
+      try { showToast('Servers unreachable', 'Pick one from the Servers menu'); } catch (e) {}
+      return false;
+    }
+    try { btn.click(); } catch (e) { return false; }
+    pendingMenuOpen++;
+    return false;
+  }
+  pendingMenuOpen = 0;
   var next = null;
   for (var i = 0; i < cands.length; i++) {
     var name = '';
     try { name = (cands[i].textContent || '').trim(); } catch (e) {}
     if (name && triedServers.indexOf(name) === -1) { next = cands[i]; break; }
   }
-  if (!next) return false; // every server tried (or no menu): stand down
+  if (!next) {
+    // Everything visible already tried (the list can change as the player
+    // retries): keep polling, but narrate at most every 30s.
+    if (!lastStatusToast || now - lastStatusToast > 30000) {
+      lastStatusToast = now;
+      try { showToast('Still trying servers…'); } catch (e) {}
+    }
+    return false;
+  }
   var label = '';
   try { label = (next.textContent || '').trim(); } catch (e) {}
   try { next.click(); } catch (e) { return false; }
   if (label) triedServers.push(label);
   autoSwitches++;
   stallSince = 0; // fresh clock for the new server
+  lastStatusToast = now;
   try { showToast('Server stuck', 'Trying ' + (label || 'next server') + '…'); } catch (e) {}
   return true;
 }
@@ -806,9 +862,12 @@ export function initTV() {
     });
   } catch (e) {}
   setInterval(function () {
-    // Quiet mode: while the player hasn't produced its first frame, skip the
-    // fixed pass (forced layouts on a churning retry-loop DOM can wedge weak
-    // SoCs). Mutation-driven passes still keep controls reachable.
+    // Zone marking stays unconditional (the watchdog needs zones while
+    // buffering). Quiet mode: while the player hasn't produced its first
+    // frame, skip the fixed pass (forced layouts on a churning retry-loop
+    // DOM can wedge weak SoCs). Mutation-driven passes still keep controls
+    // reachable.
+    try { markPlayerZones(); } catch (e) {}
     try { if (isPlayerBuffering()) return; } catch (e) {}
     makeFocusable(document);
     try { rebuildRows(document); } catch (e) {}

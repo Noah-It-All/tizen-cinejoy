@@ -421,9 +421,10 @@ import { isPlayerBuffering, serverCandidates, watchdogTick } from '../src/tv.js'
       el.getBoundingClientRect = () => ({ width: w, height: h, left: 0, top: 400, right: w, bottom: 400 + h, x: 0, y: 400 });
     };
     const vid = doc.querySelector('video');
-    const stubVideo = (t, rs) => {
+    const stubVideo = (t, rs, paused) => {
       Object.defineProperty(vid, 'currentTime', { value: t, configurable: true });
       Object.defineProperty(vid, 'readyState', { value: rs, configurable: true });
+      Object.defineProperty(vid, 'paused', { value: !!paused, configurable: true });
     };
     rect(doc.getElementById('s-lis'), 336, 40);
     rect(doc.getElementById('s-neb'), 336, 40);
@@ -432,12 +433,12 @@ import { isPlayerBuffering, serverCandidates, watchdogTick } from '../src/tv.js'
     ok(names.includes('Lisbon') && names.includes('Nebula'), 'server candidates found (' + names.join(',') + ')');
     ok(!names.join(' ').includes('View details') && !names.join(' ').includes('0:05'), 'title/clock buttons excluded');
     // Quiet mode: stalled video -> buffering; playing video -> not.
-    stubVideo(0, 1);
+    stubVideo(0, 1, false);
     ok(isPlayerBuffering(), 'stalled video counts as buffering (quiet mode)');
-    stubVideo(12.5, 4);
+    stubVideo(12.5, 4, false);
     ok(!isPlayerBuffering(), 'playing video is not buffering');
-    // Watchdog: stall with zero progress advances to next untried server.
-    stubVideo(0, 1);
+    // Watchdog: spinner (unpaused, clock frozen) advances to next server.
+    stubVideo(0, 1, false);
     let clicked = null;
     doc.getElementById('s-lis').addEventListener('click', () => { clicked = 'Lisbon'; });
     doc.getElementById('s-neb').addEventListener('click', () => { clicked = 'Nebula'; });
@@ -445,9 +446,92 @@ import { isPlayerBuffering, serverCandidates, watchdogTick } from '../src/tv.js'
     ok(watchdogTick(1000 + 16000) === true, 'stalled past threshold auto-switches server');
     ok(clicked === 'Lisbon' || clicked === 'Nebula', 'auto-switch clicked a server (' + clicked + ')');
     // Progress stands the watchdog down.
-    stubVideo(30, 4);
+    stubVideo(30, 4, false);
     ok(watchdogTick(1000 + 30000) === false, 'progress disarms the watchdog');
     ok(clicked && (clicked === 'Lisbon' || clicked === 'Nebula'), 'no further clicks once playing');
+    // Deliberate pause mid-film: never auto-switch.
+    clicked = null;
+    stubVideo(45, 4, true);
+    ok(watchdogTick(100000) === false, 'paused mid-film does not trigger');
+    ok(watchdogTick(100000 + 30000) === false, 'paused mid-film never triggers');
+    ok(clicked === null, 'no clicks while deliberately paused');
+    // Autoplay rescue: paused at 0 with data -> play() attempted once.
+    let plays = 0;
+    Object.defineProperty(vid, 'play', { value: () => { plays++; return null; }, configurable: true });
+    stubVideo(0, 2, true);
+    ok(watchdogTick(200000) === false, 'paused-at-start tick arms the clock');
+    ok(watchdogTick(200000 + 9000) === false, 'autoplay rescue tries play() first');
+    ok(plays === 1, 'play() attempted exactly once');
+    ok(watchdogTick(200000 + 20000) === true, 'still stuck after rescue -> server switch');
+  } finally {
+    global.document = prevDoc;
+    global.window = prevWin;
+    dom.window.close();
+  }
+}
+
+// 14. Watchdog menu phasing: closed menu opens across ticks, then switches.
+{
+  const dom = new JSDOM(
+    '<!DOCTYPE html><html><body><div id="proot"><video></video>' +
+    '<button aria-label="Servers">menu</button>' +
+    '<button id="s-vega">Vega</button></div></body></html>',
+    { url: 'https://cinejoy.to/watch/movie/1', runScripts: 'outside-only' }
+  );
+  const doc = dom.window.document;
+  const prevDoc = global.document;
+  const prevWin = global.window;
+  global.document = doc;
+  global.window = dom.window;
+  try {
+    doc.getElementById('proot').setAttribute('data-tj-player', '1');
+    const vid = doc.querySelector('video');
+    Object.defineProperty(vid, 'currentTime', { value: 0, configurable: true });
+    Object.defineProperty(vid, 'readyState', { value: 1, configurable: true });
+    Object.defineProperty(vid, 'paused', { value: false, configurable: true });
+    const vega = doc.getElementById('s-vega');
+    // Menu closed: zero-size candidates.
+    vega.getBoundingClientRect = () => ({ width: 0, height: 0, left: 0, top: 0, right: 0, bottom: 0, x: 0, y: 0 });
+    let menuClicks = 0;
+    let vegaClicks = 0;
+    doc.querySelector('button[aria-label="Servers"]').addEventListener('click', () => { menuClicks++; });
+    vega.addEventListener('click', () => { vegaClicks++; });
+    ok(watchdogTick(500000) === false, 'stall arms the clock (menu phase)');
+    ok(watchdogTick(500000 + 16000) === false, 'no candidates yet: opens menu, waits');
+    ok(menuClicks >= 1, 'Servers button clicked to open menu');
+    ok(vegaClicks === 0, 'no server clicked while menu closed');
+    // Menu now open: candidates measurable.
+    vega.getBoundingClientRect = () => ({ width: 336, height: 40, left: 0, top: 400, right: 336, bottom: 440, x: 0, y: 400 });
+    ok(watchdogTick(500000 + 21000) === true, 'visible candidate gets clicked next tick');
+    ok(vegaClicks === 1, 'untried server clicked exactly once');
+  } finally {
+    global.document = prevDoc;
+    global.window = prevWin;
+    dom.window.close();
+  }
+}
+
+// 15. Watchdog when the control bar is torn down (server loading): waits with
+// a status toast instead of going mute; all-tried list keeps polling audibly.
+{
+  const dom = new JSDOM(
+    '<!DOCTYPE html><html><body><div id="proot"><video></video></div></body></html>',
+    { url: 'https://cinejoy.to/watch/movie/1', runScripts: 'outside-only' }
+  );
+  const doc = dom.window.document;
+  const prevDoc = global.document;
+  const prevWin = global.window;
+  global.document = doc;
+  global.window = dom.window;
+  try {
+    const vid = doc.querySelector('video');
+    Object.defineProperty(vid, 'currentTime', { value: 0, configurable: true });
+    Object.defineProperty(vid, 'readyState', { value: 1, configurable: true });
+    Object.defineProperty(vid, 'paused', { value: false, configurable: true });
+    ok(watchdogTick(600000) === false, 'bar-absent stall arms the clock');
+    ok(watchdogTick(600000 + 16000) === false, 'no bar, no Servers button: waits');
+    const toast = doc.getElementById('tj-toast');
+    ok(!!toast && /Waiting on the stream server/.test(toast.textContent), 'status toast narrates the wait');
   } finally {
     global.document = prevDoc;
     global.window = prevWin;

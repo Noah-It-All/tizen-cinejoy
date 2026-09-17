@@ -37,12 +37,14 @@ is `opacity:0`, so focus highlights the visible progress bar instead
 (`.tj-seek-focus`). Any arrow press wakes the auto-hiding control bar via a
 synthetic `mousemove`. Left/Right inside the bar steps button-to-button
 through the row logic.
-- **Stuck-server watchdog** (`src/tv.js`): if the video shows zero progress
-for ~15s (e.g. frozen on "Trying Lisbon"), the module opens the player's
+- **Stuck-server watchdog** (`src/tv.js`): the clock advancing is the only
+proof of health — `readyState` alone doesn't count. Paused-at-0 with data
+gets one `play()` rescue attempt; a frozen clock for ~15s opens the player's
 Servers menu and clicks the next untried server (Lisbon → Nebula → …),
-with a toast narrating the switch. Stands down the moment anything plays,
-never touches a server you picked yourself, max 6 auto-switches. While the
-video hasn't produced its first frame, the fixed 2.5s focus passes are also
+with a toast narrating each step. Deliberate pauses are never touched, manual
+server picks are respected, max 6 auto-switches, and long waits get periodic
+"Waiting on the stream server" toasts instead of silence. While the video
+hasn't produced its first frame, the fixed 2.5s focus passes are also
 skipped (quiet mode) so layout work can't pile onto a churning retry loop
 on weak SoCs — interaction-driven passes still run.
 - **Row-aware arrows** (`src/rows.js`, the Netflix feel): Left/Right steps to

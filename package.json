@@ -1,7 +1,7 @@
 {
   "name": "tizen-cinejoy",
   "appName": "CineJoy",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "TizenBrew site-modification module that wraps https://cinejoy.to/ with full Samsung remote support and working keyboard search. No adblocking (use Pi-hole).",
   "packageType": "mods",
   "websiteURL": "https://cinejoy.to/",
